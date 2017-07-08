@@ -6,7 +6,8 @@
 
 using namespace std;
 
-class MPC {
+class MPC 
+{
  public:
   MPC();
 

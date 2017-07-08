@@ -9,10 +9,11 @@
 namespace plt = matplotlibcpp;
 
 using CppAD::AD;
+using namespace std;
 
-// TODO: Set N and dt
-size_t N = ? ;
-double dt = ? ;
+// : Set N and dt
+size_t N = 20 ; // From Lenght and Duration topic in Lesson 19
+double dt = 0.5 ;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -42,60 +43,103 @@ size_t epsi_start = cte_start + N;
 size_t delta_start = epsi_start + N;
 size_t a_start = delta_start + N - 1;
 
-class FG_eval {
- public:
-  Eigen::VectorXd coeffs;
-  // Coefficients of the fitted polynomial.
-  FG_eval(Eigen::VectorXd coeffs) { this->coeffs = coeffs; }
+class FG_eval 
+{
+    public:
 
-  typedef CPPAD_TESTVECTOR(AD<double>) ADvector;
-  // `fg` is a vector containing the cost and constraints.
-  // `vars` is a vector containing the variable values (state & actuators).
-  void operator()(ADvector& fg, const ADvector& vars) {
-    // The cost is stored is the first element of `fg`.
-    // Any additions to the cost should be added to `fg[0]`.
-    fg[0] = 0;
+        Eigen::VectorXd coeffs;
+        // Coefficients of the fitted polynomial.
+        FG_eval(Eigen::VectorXd coeffs) { this->coeffs = coeffs; }
 
-    // Reference State Cost
-    // TODO: Define the cost related the reference state and
-    // any anything you think may be beneficial.
+        typedef CPPAD_TESTVECTOR(AD<double>) ADvector;
 
-    //
-    // Setup Constraints
-    //
-    // NOTE: In this section you'll setup the model constraints.
+        // `fg` is a vector containing the cost and constraints.
+        // `vars` is a vector containing the variable values (state & actuators).
+        void operator()(ADvector& fg, const ADvector& vars) 
+        {
+          // The cost is stored is the first element of `fg`.
+          // Any additions to the cost should be added to `fg[0]`.
+          fg[0] = 0;
 
-    // Initial constraints
-    //
-    // We add 1 to each of the starting indices due to cost being located at
-    // index 0 of `fg`.
-    // This bumps up the position of all the other values.
-    fg[1 + x_start] = vars[x_start];
-    fg[1 + y_start] = vars[y_start];
-    fg[1 + psi_start] = vars[psi_start];
-    fg[1 + v_start] = vars[v_start];
-    fg[1 + cte_start] = vars[cte_start];
-    fg[1 + epsi_start] = vars[epsi_start];
+          // Reference State Cost
+          // : Define the cost related the reference state and
+          // any anything you think may be beneficial.
 
-    // The rest of the constraints
-    for (int t = 1; t < N; t++) {
-      AD<double> x1 = vars[x_start + t];
 
-      AD<double> x0 = vars[x_start + t - 1];
-      AD<double> psi0 = vars[psi_start + t - 1];
-      AD<double> v0 = vars[v_start + t - 1];
+          for(int i=0; i < N; i++)
+          {
+            fg[0] += CppAD::pow(vars[cte_start + i], 2); // cte
+            fg[0] += CppAD::pow(vars[epsi_start + i], 2); // epsi
 
-      // Here's `x` to get you started.
-      // The idea here is to constraint this value to be 0.
-      //
-      // NOTE: The use of `AD<double>` and use of `CppAD`!
-      // This is also CppAD can compute derivatives and pass
-      // these to the solver.
+            fg[0] += CppAD::pow(vars[v_start + i] - 20, 2); // 20 is a reference velocity. This is to avoid
+            // the vehicle stop moving when it's perfectly aligned with the center.
 
-      // TODO: Setup the rest of the model constraints
-      fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
-    }
-  }
+            fg[0] += CppAD::pow(vars[delta_start + i], 2); // delta. We want the car to drive straight ahead as much as possible
+          }
+
+          // To enforce smooth transition
+          for(int i=0; i < N-2; i++)
+          {
+            fg[0] += 500*CppAD::pow(vars[delta_start + i + 1] - vars[delta_start + i], 2); // delta
+            fg[0] += 200*CppAD::pow(vars[a_start + i + 1] - vars[a_start + i], 2);  // a
+          }
+
+          //
+          // Setup Constraints
+          //
+          // NOTE: In this section you'll setup the model constraints.
+
+          // Initial constraints
+          //
+          // We add 1 to each of the starting indices due to cost being located at
+          // index 0 of `fg`.
+          // This bumps up the position of all the other values.
+          fg[1 + x_start] = vars[x_start];
+          fg[1 + y_start] = vars[y_start];
+          fg[1 + psi_start] = vars[psi_start];
+          fg[1 + v_start] = vars[v_start];
+          fg[1 + cte_start] = vars[cte_start];
+          fg[1 + epsi_start] = vars[epsi_start];
+
+          // The rest of the constraints
+          for (int t = 1; t < N; t++) 
+          {
+            AD<double> x0 = vars[x_start + t - 1];
+            AD<double> y0 = vars[y_start + t - 1];
+            AD<double> psi0 = vars[psi_start + t - 1];
+            AD<double> v0 = vars[v_start + t - 1];
+            AD<double> cte0 = vars[cte_start + t - 1];
+            AD<double> epsi0 = vars[epsi_start + t - 1];
+
+            AD<double> x1 = vars[x_start + t];
+            AD<double> y1 = vars[y_start + t];
+            AD<double> psi1 = vars[psi_start + t];
+            AD<double> v1 = vars[v_start + t];
+            AD<double> cte1 = vars[cte_start + t];
+            AD<double> epsi1 = vars[epsi_start + t];
+
+            AD<double> delta0 = vars[delta_start + t - 1];
+            AD<double> a0 = vars[a_start + t - 1];
+
+            AD<double> f0 = coeffs[0] + coeffs[1] * x0;
+            AD<double> psi_des = CppAD::atan(coeffs[1]);
+
+            // Here's `x` to get you started.
+            // The idea here is to constraint this value to be 0.
+            //
+            // NOTE: The use of `AD<double>` and use of `CppAD`!
+            // This is also CppAD can compute derivatives and pass
+            // these to the solver.
+
+            // : Setup the rest of the model constraints
+            fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
+            fg[1 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
+            fg[1 + psi_start + t] = psi1 - (psi0 + v0/Lf * delta0 * dt);
+            fg[1 + v_start + t] = v1 - (v0 + a0 * dt);
+            fg[1 + cte_start + t] = cte1 - (f0 - y0 + v0 * CppAD::sin(epsi0) * dt);
+            fg[1 + epsi_start + t] = epsi1 - (psi0 - psi_des + v0/Lf * delta0 * dt);
+          }
+        }
 };
 
 //
@@ -105,7 +149,8 @@ class FG_eval {
 MPC::MPC() {}
 MPC::~MPC() {}
 
-vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
+vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) 
+{
   size_t i;
   typedef CPPAD_TESTVECTOR(double) Dvector;
 
@@ -125,7 +170,8 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
   // Initial value of the independent variables.
   // Should be 0 except for the initial values.
   Dvector vars(n_vars);
-  for (int i = 0; i < n_vars; i++) {
+  for (int i = 0; i < n_vars; i++) 
+  {
     vars[i] = 0.0;
   }
   // Set the initial variable values
@@ -142,7 +188,8 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
 
   // Set all non-actuators upper and lowerlimits
   // to the max negative and positive values.
-  for (int i = 0; i < delta_start; i++) {
+  for (int i = 0; i < delta_start; i++) 
+  {
     vars_lowerbound[i] = -1.0e19;
     vars_upperbound[i] = 1.0e19;
   }
@@ -150,14 +197,16 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
   // The upper and lower limits of delta are set to -25 and 25
   // degrees (values in radians).
   // NOTE: Feel free to change this to something else.
-  for (int i = delta_start; i < a_start; i++) {
+  for (int i = delta_start; i < a_start; i++) 
+  {
     vars_lowerbound[i] = -0.436332;
     vars_upperbound[i] = 0.436332;
   }
 
   // Acceleration/decceleration upper and lower limits.
   // NOTE: Feel free to change this to something else.
-  for (int i = a_start; i < n_vars; i++) {
+  for (int i = a_start; i < n_vars; i++) 
+  {
     vars_lowerbound[i] = -1.0;
     vars_upperbound[i] = 1.0;
   }
@@ -167,10 +216,12 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
   // state indices.
   Dvector constraints_lowerbound(n_constraints);
   Dvector constraints_upperbound(n_constraints);
-  for (int i = 0; i < n_constraints; i++) {
+  for (int i = 0; i < n_constraints; i++) 
+  {
     constraints_lowerbound[i] = 0;
     constraints_upperbound[i] = 0;
   }
+
   constraints_lowerbound[x_start] = x;
   constraints_lowerbound[y_start] = y;
   constraints_lowerbound[psi_start] = psi;
@@ -210,6 +261,7 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
 
   auto cost = solution.obj_value;
   std::cout << "Cost " << cost << std::endl;
+
   return {solution.x[x_start + 1],   solution.x[y_start + 1],
           solution.x[psi_start + 1], solution.x[v_start + 1],
           solution.x[cte_start + 1], solution.x[epsi_start + 1],
@@ -221,9 +273,11 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
 //
 
 // Evaluate a polynomial.
-double polyeval(Eigen::VectorXd coeffs, double x) {
+double polyeval(Eigen::VectorXd coeffs, double x) 
+{
   double result = 0.0;
-  for (int i = 0; i < coeffs.size(); i++) {
+  for (int i = 0; i < coeffs.size(); i++) 
+  {
     result += coeffs[i] * pow(x, i);
   }
   return result;
@@ -233,17 +287,21 @@ double polyeval(Eigen::VectorXd coeffs, double x) {
 // Adapted from
 // https://github.com/JuliaMath/Polynomials.jl/blob/master/src/Polynomials.jl#L676-L716
 Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
-                        int order) {
+                        int order) 
+{
   assert(xvals.size() == yvals.size());
   assert(order >= 1 && order <= xvals.size() - 1);
   Eigen::MatrixXd A(xvals.size(), order + 1);
 
-  for (int i = 0; i < xvals.size(); i++) {
+  for (int i = 0; i < xvals.size(); i++) 
+  {
     A(i, 0) = 1.0;
   }
 
-  for (int j = 0; j < xvals.size(); j++) {
-    for (int i = 0; i < order; i++) {
+  for (int j = 0; j < xvals.size(); j++) 
+  {
+    for (int i = 0; i < order; i++) 
+    {
       A(j, i + 1) = A(j, i) * xvals(j);
     }
   }
@@ -253,7 +311,9 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
-int main() {
+
+int main() 
+{
   MPC mpc;
   int iters = 50;
 
@@ -263,17 +323,19 @@ int main() {
   ptsy << -1, -1;
 
   // TODO: fit a polynomial to the above x and y coordinates
-  auto coeffs = ? ;
+  auto coeffs = polyfit(ptsx, ptsy, 1);
 
   // NOTE: free feel to play around with these
   double x = -1;
   double y = 10;
   double psi = 0;
   double v = 10;
-  // TODO: calculate the cross track error
-  double cte = ? ;
-  // TODO: calculate the orientation error
-  double epsi = ? ;
+  // : calculate the cross track error
+  double f = coeffs[0] + coeffs[1] * x;
+  double cte = f - y ;
+  // : calculate the orientation error
+  double psi_des = atan(coeffs[1]);
+  double epsi = psi - psi_des ;
 
   Eigen::VectorXd state(6);
   state << x, y, psi, v, cte, epsi;
@@ -287,7 +349,8 @@ int main() {
   std::vector<double> delta_vals = {};
   std::vector<double> a_vals = {};
 
-  for (size_t i = 0; i < iters; i++) {
+  for (size_t i = 0; i < iters; i++) 
+  {
     std::cout << "Iteration " << i << std::endl;
 
     auto vars = mpc.Solve(state, coeffs);
